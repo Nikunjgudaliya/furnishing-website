@@ -111,26 +111,28 @@ class UserController extends Controller
         if (Auth::check()) {
             return redirect('/');
         }
-
+    
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
         ]);
-
+    
         $user = User::where('email', $request->email)->first();
-
+    
         if (!$user || !Hash::check($request->password, $user->password)) {
             return back()->withErrors(['email' => 'Invalid credentials']);
         }
-
+    
         // Set user status to active on login
         $user->status = true;
         $user->save();
-
+    
         Auth::login($user);
-
+    
         return redirect('/');
     }
+    
+
 
     // Logout User
     public function logout(Request $request)
