@@ -3,21 +3,27 @@ import { Link, useForm, usePage, router } from "@inertiajs/react";
 import Navbar from "../components/Navbar";
 
 export default function Login() {
-    const { auth } = usePage().props;
+    // ✅ Get user data from Inertia props
+    const { props } = usePage();
+    const user = props.auth?.user;
 
-    if (auth?.user) {
-        router.visit("/");
-        return null;
+    // ✅ If user is logged in, redirect
+    if (user) {
+        return router.visit("/");
     }
 
+    // ✅ Form state for login
     const { data, setData, post, errors, processing } = useForm({
         email: "",
         password: "",
     });
 
+    // ✅ Handle form submission
     const handleSubmit = (e) => {
         e.preventDefault();
-        post("/login");
+        post("/login", {
+            onSuccess: () => router.visit("/"),
+        });
     };
 
     return (

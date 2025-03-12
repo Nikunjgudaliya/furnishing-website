@@ -6,45 +6,40 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
-use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
-    // Store a new user
-    
-    
+    // Store a new user (Register)
     public function store(Request $request)
     {
-        try {
-            $request->validate([
-                'username' => 'required|string|max:255',
-                'email' => 'required|email|unique:users,email',
-                'password' => 'required|min:6|confirmed',
-                'image' => 'nullable|image|mimes:jpg,jpeg,png|max:10240',
-            ]);
-    
-            $imagePath = null;
-            if ($request->hasFile('image')) {
-                $imagePath = $request->file('image')->store('profiles', 'public');
-            }
-    
-            $user = User::create([
-                'username' => $request->username,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-                'image' => $imagePath,
-            ]);
-    
-            return redirect()->route('login')->with('success', 'Account created successfully!');
-        } catch (ValidationException $e) {
-            return back()->withErrors($e->errors()); // Correct way to return errors for Inertia
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => $e->getMessage()]); // Handle other errors properly
+        if (Auth::check()) {
+            return redirect('/');
         }
-    }
-    
 
+        $request->validate([
+            'username' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|min:6|confirmed',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:10240',
+        ]);
+
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('profiles', 'public');
+        }
+
+        $user = User::create([
+            'username' => $request->username,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'image' => $imagePath,
+            'status' => false, // Default status is inactive
+        ]);
+
+        return redirect()->route('login')->with('success', 'Account created successfully!');
+    }
 
     // Get all users
     public function index()
@@ -65,29 +60,26 @@ class UserController extends Controller
     public function update(Request $request, $id)
     {
         $user = User::findOrFail($id);
-    
+
         $request->validate([
             'username' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $id,
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:10420',
         ]);
-    
+
         $user->username = $request->username;
         $user->email = $request->email;
-    
+
         if ($request->hasFile('image')) {
-            // Delete old image if exists
             if ($user->image) {
                 Storage::disk('public')->delete($user->image);
             }
-    
-            // Store new image
             $imagePath = $request->file('image')->store('profiles', 'public');
             $user->image = $imagePath;
         }
-    
+
         $user->save();
-    
+
         return response()->json([
             'message' => 'User updated successfully!',
             'user' => [
@@ -98,53 +90,80 @@ class UserController extends Controller
             ],
         ]);
     }
-    
+
     // Delete user
     public function destroy($id)
     {
         $user = User::find($id);
-
         if ($user) {
             if ($user->image) {
-                Storage::disk('public')->delete($user->image); // Delete stored image
+                Storage::disk('public')->delete($user->image);
             }
             $user->delete();
-
             return response()->json(['message' => 'User deleted successfully']);
         }
-
         return response()->json(['message' => 'User not found'], 404);
     }
 
-    // Login method
-// Login method
-public function login(Request $request)
-{
-    $request->validate([
-        'email' => 'required|email',
-        'password' => 'required',
-    ]);
+    // Login User
+    public function login(Request $request)
+    {
+        if (Auth::check()) {
+            return redirect('/');
+        }
 
-    $user = User::where('email', $request->email)->first();
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required',
+        ]);
 
-    if (!$user || !Hash::check($request->password, $user->password)) {
-        return back()->withErrors(['email' => 'Invalid credentials']);
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return back()->withErrors(['email' => 'Invalid credentials']);
+        }
+
+        // Set user status to active on login
+        $user->status = true;
+        $user->save();
+
+        Auth::login($user);
+
+        return redirect('/');
     }
 
-    session([
-        'user_id' => $user->id,
-        'username' => $user->username,
-        'email' => $user->email,
-    ]);
-
-    return Inertia::location('/');
-}
-
-    // Logout method
+    // Logout User
     public function logout(Request $request)
     {
-        session()->flush();
-        return Inertia::location('/login'); 
+        $user = Auth::user();
+        if ($user) {
+            $user->status = false; // Set status to inactive
+            $user->save();
+        }
+
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect('/login');
+    }
+
+    // Get the currently logged-in user
+    public function getCurrentUser()
+    {
+        if (!auth()->check()) {
+            return response()->json(null, 200);
+        }
+
+        $user = auth()->user();
+
+        return response()->json([
+            'id' => $user->id,
+            'username' => $user->username,
+            'email' => $user->email,
+            'image' => $user->image ? asset('storage/' . $user->image) : null,
+            'status' => $user->status,
+        ]);
     }
 
     // Check if email exists
